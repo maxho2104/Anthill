@@ -1,31 +1,48 @@
 ```
-# Database files
-*.db
-
-# Python specific
+# Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 .Python
-env/
-venv/
-.venv/
-.ENV
-.python-version
 *.so
 *.egg-info/
 .eggs/
 
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-coverage/
+# Dependencies
+.venv/
+venv/
+env/
+ENV/
+
+# Database
+*.db
+*.db-journal
 
 # Build artifacts
 build/
 dist/
 *.egg
-*.whl
+
+# Logs
+*.log
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Coverage reports
+.coverage
+htmlcov/
+coverage/
+
+# Testing
+.pytest_cache/
+.mypy_cache/
 ```

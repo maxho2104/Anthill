@@ -11,13 +11,20 @@ def build_executable():
         # Install pyinstaller if not already installed
         subprocess.check_call([sys.executable, "-m", "pip", "install", "pyinstaller"])
         
-        # Build command
+        # Build command - using OS-agnostic syntax
+        import platform
+        if platform.system() == 'Windows':
+            # Windows uses semicolon separator
+            add_data_param = "--add-data=document_storage;document_storage"
+        else:
+            # Linux/MacOS uses colon separator
+            add_data_param = "--add-data=document_storage:document_storage"
+        
         cmd = [
             "pyinstaller",
             "--onefile",           # Create a single executable file
             "--windowed",          # Create a GUI application (no console on Windows)
             "--name=DocumentWorkflowApp",  # Name of the executable
-            "--add-data=document_storage;document_storage",  # Include document storage directory
             "--hidden-import=PyQt5.sip",   # Include hidden imports
             "main.py"
         ]

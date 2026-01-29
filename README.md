@@ -1,82 +1,70 @@
-# Система учета внутренней корреспонденции
+# Document Workflow Management Application
 
-Приложение для автоматизации деятельности сотрудников делопроизводства распределённого предприятия (головной офис и филиалы) по учету внутренней корреспонденции.
+This application automates the activities of enterprise documentation staff for accounting of internal correspondence between headquarters and branches.
 
-## Описание
+## Features
 
-Система предназначена для автоматизации процесса учета внутренней документооборота между филиалами предприятия и головным офисом. Приложение позволяет:
+- **Document Management**: Full CRUD operations for documents with support for various document types
+- **Peewee ORM Integration**: Uses Peewee ORM with SQLite database backend
+- **Lazy Loading**: Efficient handling of large datasets (30,000+ records) with pagination
+- **Advanced Filtering**: Comprehensive filtering options with date ranges
+- **QTableView Integration**: Efficient display of documents with custom table model
+- **Export/Import**: ZIP-based export/import functionality for inter-office communication
+- **Statistics**: Automated statistical calculations and reporting
+- **Search**: Fast search across document fields
 
-- Учитывать документы с присвоением исходящих номеров и дат
-- Отслеживать статус документов
-- Экспортировать пакеты документов для передачи в головной офис
-- Импортировать документы из филиалов
-- Импортировать оценки документов из головного офиса
-- Генерировать статистику по документам
-- Осуществлять быстрый поиск по реквизитам документов
+## Architecture
 
-## Требования
+- **Frontend**: PyQt5 GUI
+- **Backend**: Peewee ORM with SQLite
+- **File Storage**: Structured file storage (files stored on disk, references in DB)
 
-- Python 3.7+
-- PyQt5
-- peewee ORM
-- SQLite
+## Setup
 
-## Установка
-
-1. Установите зависимости:
+1. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-2. Запустите приложение:
+2. Run the application:
 ```bash
 python main.py
 ```
 
-## Создание исполняемого файла
+## Usage
 
-Для создания одного исполняемого файла используйте скрипт сборки:
+1. **Documents Tab**: View, add, edit, and delete documents with filtering capabilities
+2. **Statistics Tab**: Generate statistical reports by branch, department, and time period
+3. **Export/Import Tab**: Exchange documents and evaluations between branches and headquarters
+
+## Key Components
+
+- `Peewee/Classes/`: Contains Peewee models and custom components
+- `DocumentTableModel`: Custom QAbstractTableModel with lazy loading
+- `FilterDialog`: Advanced filtering options
+- `test_data.py`: Generator for test data with Faker library
+
+## Building
+
+To create a standalone executable:
 ```bash
 python build_app.py
 ```
 
-Исполняемый файл будет создан в папке `dist/`.
+## Database Schema
 
-## Архитектура
+The application uses three main tables:
+- `branches`: Enterprise branches
+- `departments`: Departments within branches
+- `documents`: Document records with metadata
 
-Приложение состоит из следующих компонентов:
+## Lazy Loading
 
-- **Документы** - управление документами, добавление, редактирование, удаление
-- **Статистика** - генерация отчетов и статистики по документам
-- **Экспорт/Импорт** - инструменты для обмена данными между филиалами и головным офисом
+The application implements efficient lazy loading with configurable batch sizes to handle large datasets without performance degradation.
 
-## Использование
+## Advanced Features
 
-### Добавление документа
-1. Перейдите на вкладку "Документы"
-2. Нажмите "Добавить документ"
-3. Заполните все поля формы
-4. Выберите файл документа
-5. Нажмите "Сохранить"
-
-### Экспорт документов
-1. Перейдите на вкладку "Экспорт/Импорт"
-2. Выберите филиал для экспорта
-3. Нажмите "Сформировать экспортный файл"
-4. Полученный ZIP-архив содержит JSON-метаданные и файлы документов
-
-### Импорт документов
-1. Перейдите на вкладку "Экспорт/Импорт"
-2. Нажмите "Выбрать файл импорта" и укажите ZIP-архив
-3. Нажмите "Импортировать"
-
-### Импорт оценок
-1. Перейдите на вкладку "Экспорт/Импорт"
-2. Нажмите "Выбрать файл оценок" и укажите JSON-файл или ZIP-архив
-3. Нажмите "Импортировать оценки"
-
-## Хранение данных
-
-- Метаданные документов хранятся в SQLite базе данных (documents.db)
-- Файлы документов хранятся в папке document_storage
-- При экспорте создается ZIP-архив с JSON-метаданными и файлами документов
+- **Filter Dialog**: Provides comprehensive filtering by document type, status, branch, and date range
+- **Context Menu**: Right-click context menu for quick document operations
+- **Double-click Editing**: Edit documents with double-click on table rows
+- **Row Selection**: Entire row highlighting and selection

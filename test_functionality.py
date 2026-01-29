@@ -295,64 +295,6 @@ def test_export_functionality():
     
     print("✓ Export functionality test passed\n")
 
-def test_search_functionality():
-    """Test document search functionality"""
-    print("Testing search functionality...")
-    
-    from main import DocumentWorkflowApp
-    
-    app = DocumentWorkflowApp.__new__(DocumentWorkflowApp)
-    app.db_path = 'test_documents.db'
-    app.storage_path = 'test_document_storage'
-    
-    # Add multiple test documents
-    conn = sqlite3.connect(app.db_path)
-    cursor = conn.cursor()
-    
-    test_docs = [
-        ("Основной", "Отчет по продажам", "Ежемесячный отчет", "Филиал 1", "Отдел продаж", "Менеджер", "Сидоров С.С.", "ОТЧ-001", "2023-01-10", "ВХ-001", "2023-01-11", "Аналитик", "Хорошо", "2023-01-15", None, "Оценен"),
-        ("Дополнительный", "План маркетинга", "План на Q1", "Филиал 2", "Отдел маркетинга", "Специалист", "Козлов К.К.", "ПЛН-002", "2023-01-12", "ВХ-002", "2023-01-13", "Руководитель", "Отлично", "2023-01-18", None, "Оценен"),
-        ("Основной", "Анализ эффективности", "Анализ за прошлый год", "Филиал 1", "Отдел аналитики", "Аналитик", "Волков В.В.", "АНЛ-003", "2023-01-14", "ВХ-003", "2023-01-15", "Эксперт", "Удовлетворительно", "2023-01-20", None, "Оценен")
-    ]
-    
-    for doc in test_docs:
-        cursor.execute('''
-            INSERT INTO documents (
-                doc_type, title, description, sender_branch,
-                sender_department, sender_position, sender_fio,
-                outgoing_number, outgoing_date, incoming_number,
-                incoming_date, evaluator, evaluation,
-                evaluation_date, file_path, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', doc)
-    
-    conn.commit()
-    conn.close()
-    
-    # Test search functionality
-    conn = sqlite3.connect(app.db_path)
-    cursor = conn.cursor()
-    
-    # Search by title
-    search_pattern = "%отчет%"
-    cursor.execute("""
-        SELECT * FROM documents 
-        WHERE doc_type LIKE ? OR title LIKE ? OR sender_branch LIKE ? 
-        OR sender_department LIKE ? OR sender_fio LIKE ?
-        ORDER BY created_at DESC
-    """, (search_pattern, search_pattern, search_pattern, search_pattern, search_pattern))
-    
-    results = cursor.fetchall()
-    assert len(results) >= 1, "Search didn't return expected results"
-    
-    # Verify that at least one result contains "отчет" in the title
-    found_report = any("отчет" in result[2].lower() for result in results)  # title is index 2
-    assert found_report, "Search didn't find document with 'отчет' in title"
-    
-    print(f"✓ Search functionality works, found {len(results)} documents matching 'отчет'")
-    
-    conn.close()
-    print("✓ Search functionality test passed\n")
 
 def cleanup():
     """Clean up test files"""

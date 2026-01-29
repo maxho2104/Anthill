@@ -7,15 +7,16 @@ for accounting of internal correspondence between headquarters and branches.
 
 import sys
 import os
-from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTabWidget, QLabel, QPushButton, QFileDialog, QMessageBox, QListWidget, QTableWidget, QTableWidgetItem, QHeaderView, QLineEdit, QTextEdit, QFormLayout, QDialog, QComboBox, QDateEdit, QMenu, QAction
+from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTabWidget, QLabel, QPushButton, QFileDialog, QMessageBox, QListWidget, QTableWidget, QTableWidgetItem, QHeaderView, QLineEdit, QTextEdit, QFormLayout, QDialog, QComboBox, QDateEdit, QMenu, QAction, QTableView
 from PyQt5.QtCore import Qt, QDate
 from PyQt5.QtGui import QIcon
 import json
-import sqlite3
 from datetime import datetime
 import zipfile
 import shutil
 from pathlib import Path
+
+from Peewee.Classes import initialize_db
 
 
 class DocumentWorkflowApp(QMainWindow):
@@ -27,7 +28,7 @@ class DocumentWorkflowApp(QMainWindow):
         # Initialize database
         self.db_path = "documents.db"
         self.storage_path = "document_storage"
-        self.init_database()
+        self.db = initialize_db()
         self.create_storage_directory()
         
         # Create central widget and layout
@@ -57,58 +58,6 @@ class DocumentWorkflowApp(QMainWindow):
         self.export_import_tab = ExportImportTab(self)
         self.tabs.addTab(self.export_import_tab, "Экспорт/Импорт")
     
-    def init_database(self):
-        """Initialize SQLite database with required tables"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        # Create documents table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS documents (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                doc_type TEXT NOT NULL,
-                title TEXT NOT NULL,
-                description TEXT,
-                sender_branch TEXT NOT NULL,
-                sender_department TEXT,
-                sender_position TEXT,
-                sender_fio TEXT,
-                outgoing_number TEXT,
-                outgoing_date DATE,
-                incoming_number TEXT,
-                incoming_date DATE,
-                evaluator TEXT,
-                evaluation TEXT,
-                evaluation_date DATE,
-                file_path TEXT,
-                status TEXT DEFAULT 'sent',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        
-        # Create branches table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS branches (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT UNIQUE NOT NULL,
-                address TEXT,
-                contact_person TEXT
-            )
-        ''')
-        
-        # Create departments table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS departments (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT UNIQUE NOT NULL,
-                branch_id INTEGER,
-                FOREIGN KEY (branch_id) REFERENCES branches (id)
-            )
-        ''')
-        
-        conn.commit()
-        conn.close()
-    
     def create_storage_directory(self):
         """Create document storage directory if it doesn't exist"""
         if not os.path.exists(self.storage_path):
@@ -125,32 +74,17 @@ class DocumentsTab(QWidget):
         """Initialize the documents tab UI"""
         layout = QVBoxLayout()
         
-        # Search form
-        search_group = QWidget()
-        search_layout = QHBoxLayout(search_group)
+        # Button for filters
+        self.filters_button = QPushButton("Фильтры")
+        self.filters_button.clicked.connect(self.open_filters)
+        layout.addWidget(self.filters_button)
         
-        self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Поиск по реквизитам документа...")
-        self.search_button = QPushButton("Найти")
-        self.search_button.clicked.connect(self.search_documents)
-        
-        search_layout.addWidget(QLabel("Поиск:"))
-        search_layout.addWidget(self.search_input)
-        search_layout.addWidget(self.search_button)
-        
-        layout.addWidget(search_group)
-        
-        # Documents table
-        self.documents_table = QTableWidget()
-        self.documents_table.setColumnCount(12)
-        self.documents_table.setHorizontalHeaderLabels([
-            "ID", "Тип", "Наименование", "Филиал", "Отдел", "Отправитель", 
-            "Исх. №", "Исх. дата", "Вх. №", "Вх. дата", "Оценка", "Статус"
-        ])
-        
-        # Set header stretch
-        header = self.documents_table.horizontalHeader()
-        header.setSectionResizeMode(QHeaderView.Stretch)
+        # Documents table view using QTableView
+        self.documents_table = QTableView()
+        self.documents_table.setSelectionBehavior(QTableView.SelectRows)  # Select entire rows
+        self.documents_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.documents_table.customContextMenuRequested.connect(self.context_menu)
+        self.documents_table.doubleClicked.connect(self.edit_document)  # Double click to edit
         
         layout.addWidget(self.documents_table)
         
@@ -160,134 +94,111 @@ class DocumentsTab(QWidget):
         self.add_document_btn = QPushButton("Добавить документ")
         self.add_document_btn.clicked.connect(self.add_document)
         
-        self.edit_document_btn = QPushButton("Редактировать документ")
-        self.edit_document_btn.clicked.connect(self.edit_document)
+        self.edit_selected_btn = QPushButton("Редактировать")
+        self.edit_selected_btn.clicked.connect(self.edit_document)
         
         self.delete_document_btn = QPushButton("Удалить документ")
         self.delete_document_btn.clicked.connect(self.delete_document)
         
         button_layout.addWidget(self.add_document_btn)
-        button_layout.addWidget(self.edit_document_btn)
+        button_layout.addWidget(self.edit_selected_btn)
         button_layout.addWidget(self.delete_document_btn)
         
         layout.addLayout(button_layout)
         
         self.setLayout(layout)
-        self.load_documents()
+        
+        # Initialize the table model
+        from Peewee.Classes.table_model import DocumentTableModel
+        self.model = DocumentTableModel(batch_size=100)
+        self.documents_table.setModel(self.model)
+        self.model.load_data()  # Load initial data
     
-    def load_documents(self):
-        """Load documents from database to table"""
-        conn = sqlite3.connect(self.main_app.db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute('SELECT * FROM documents ORDER BY created_at DESC')
-        records = cursor.fetchall()
-        
-        self.documents_table.setRowCount(len(records))
-        
-        for row_idx, record in enumerate(records):
-            for col_idx, value in enumerate(record):
-                item = QTableWidgetItem(str(value) if value else "")
-                self.documents_table.setItem(row_idx, col_idx, item)
-        
-        conn.close()
+    def open_filters(self):
+        """Open filter dialog"""
+        from Peewee.Classes.filter_dialog import FilterDialog
+        dialog = FilterDialog(self)
+        dialog.filters_applied.connect(self.apply_filters)
+        dialog.exec_()
     
-    def search_documents(self):
-        """Search documents by criteria"""
-        search_term = self.search_input.text().strip().lower()
-        if not search_term:
-            self.load_documents()
-            return
+    def apply_filters(self, filters):
+        """Apply filters to the model"""
+        self.model.clear_data()
+        self.model.load_data(filters=filters)
+    
+    def context_menu(self, position):
+        """Show context menu on right-click"""
+        menu = QMenu()
+        edit_action = menu.addAction("Изменить")
+        delete_action = menu.addAction("Удалить")
         
-        conn = sqlite3.connect(self.main_app.db_path)
-        cursor = conn.cursor()
+        action = menu.exec_(self.documents_table.mapToGlobal(position))
         
-        # Get all documents first (we'll filter in Python to handle Cyrillic properly)
-        cursor.execute('SELECT * FROM documents ORDER BY created_at DESC')
-        all_records = cursor.fetchall()
-        
-        # Filter in Python to handle Cyrillic text properly
-        filtered_records = []
-        for record in all_records:
-            # Fields to search: doc_type(1), title(2), sender_branch(4), sender_department(5), sender_fio(7)
-            search_fields = [
-                str(record[1]).lower() if record[1] else '',  # doc_type
-                str(record[2]).lower() if record[2] else '',  # title
-                str(record[4]).lower() if record[4] else '',  # sender_branch
-                str(record[5]).lower() if record[5] else '',  # sender_department
-                str(record[7]).lower() if record[7] else '',  # sender_fio
-            ]
-            
-            if any(search_term in field for field in search_fields):
-                filtered_records.append(record)
-        
-        self.documents_table.setRowCount(len(filtered_records))
-        
-        for row_idx, record in enumerate(filtered_records):
-            for col_idx, value in enumerate(record):
-                item = QTableWidgetItem(str(value) if value else "")
-                self.documents_table.setItem(row_idx, col_idx, item)
-        
-        conn.close()
+        if action == edit_action:
+            self.edit_document()
+        elif action == delete_action:
+            self.delete_document()
     
     def add_document(self):
         """Add new document"""
         dialog = DocumentDialog(self.main_app)
         if dialog.exec_() == QDialog.Accepted:
-            self.load_documents()
+            self.refresh_data()
     
     def edit_document(self):
         """Edit selected document"""
-        current_row = self.documents_table.currentRow()
-        if current_row < 0:
+        selected_indexes = self.documents_table.selectionModel().selectedRows()
+        if not selected_indexes:
             QMessageBox.warning(self, "Ошибка", "Выберите документ для редактирования")
             return
         
-        doc_id_item = self.documents_table.item(current_row, 0)
-        if doc_id_item:
-            doc_id = int(doc_id_item.text())
-            dialog = DocumentDialog(self.main_app, doc_id)
-            if dialog.exec_() == QDialog.Accepted:
-                self.load_documents()
+        # Get the document from the model
+        row = selected_indexes[0].row()
+        document = self.model.data_list[row]
+        
+        dialog = DocumentDialog(self.main_app, document.id)
+        if dialog.exec_() == QDialog.Accepted:
+            self.refresh_data()
     
     def delete_document(self):
         """Delete selected document"""
-        current_row = self.documents_table.currentRow()
-        if current_row < 0:
+        selected_indexes = self.documents_table.selectionModel().selectedRows()
+        if not selected_indexes:
             QMessageBox.warning(self, "Ошибка", "Выберите документ для удаления")
             return
         
-        doc_id_item = self.documents_table.item(current_row, 0)
-        if doc_id_item:
-            doc_id = int(doc_id_item.text())
-            
-            reply = QMessageBox.question(
-                self, 
-                "Подтверждение", 
-                "Вы уверены, что хотите удалить выбранный документ?",
-                QMessageBox.Yes | QMessageBox.No, 
-                QMessageBox.No
-            )
-            
-            if reply == QMessageBox.Yes:
-                conn = sqlite3.connect(self.main_app.db_path)
-                cursor = conn.cursor()
-                
-                # Get file path to remove the actual file
-                cursor.execute("SELECT file_path FROM documents WHERE id = ?", (doc_id,))
-                result = cursor.fetchone()
-                if result and result[0]:
-                    try:
-                        os.remove(result[0])
-                    except OSError:
-                        pass  # File might not exist
+        # Get the document from the model
+        row = selected_indexes[0].row()
+        document = self.model.data_list[row]
+        
+        reply = QMessageBox.question(
+            self, 
+            "Подтверждение", 
+            "Вы уверены, что хотите удалить выбранный документ?",
+            QMessageBox.Yes | QMessageBox.No, 
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            try:
+                # Remove associated file if it exists
+                if document.file_path and os.path.exists(document.file_path):
+                    os.remove(document.file_path)
                 
                 # Delete from database
-                cursor.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
-                conn.commit()
-                conn.close()
+                document.delete_instance()
                 
-                self.load_documents()
+                # Refresh the table
+                self.refresh_data()
+            except Exception as e:
+                QMessageBox.critical(self, "Ошибка", f"Ошибка при удалении документа: {str(e)}")
+    
+    def refresh_data(self):
+        """Refresh the displayed data"""
+        # Get current filters
+        filters = self.model.filters
+        self.model.clear_data()
+        self.model.load_data(filters=filters)
 
 
 class DocumentDialog(QDialog):
@@ -298,8 +209,18 @@ class DocumentDialog(QDialog):
         self.setWindowTitle("Документ" if doc_id else "Новый документ")
         self.setGeometry(200, 200, 600, 700)
         
-        self.init_ui()
+        # Load document object if editing
+        self.document = None
         if doc_id:
+            from Peewee.Classes import Document
+            try:
+                self.document = Document.get_by_id(doc_id)
+            except:
+                QMessageBox.critical(self, "Ошибка", "Документ не найден")
+                self.reject()
+        
+        self.init_ui()
+        if self.document:
             self.load_document_data()
     
     def init_ui(self):
@@ -311,7 +232,8 @@ class DocumentDialog(QDialog):
         
         # Document type
         self.doc_type_combo = QComboBox()
-        self.doc_type_combo.addItems(["Основной", "Дополнительный", "Отчетный", "Прочий"])
+        for code, name in [('main', 'Основной'), ('additional', 'Дополнительный'), ('report', 'Отчетный'), ('other', 'Прочий')]:
+            self.doc_type_combo.addItem(name, code)
         form_layout.addRow("Тип документа:", self.doc_type_combo)
         
         # Title
@@ -324,12 +246,18 @@ class DocumentDialog(QDialog):
         form_layout.addRow("Описание:", self.description_edit)
         
         # Sender branch
-        self.sender_branch_edit = QLineEdit()
-        form_layout.addRow("Филиал отправителя:", self.sender_branch_edit)
+        self.sender_branch_combo = QComboBox()
+        from Peewee.Classes import Branch
+        for branch in Branch.select():
+            self.sender_branch_combo.addItem(branch.name, branch.id)
+        form_layout.addRow("Филиал отправителя:", self.sender_branch_combo)
         
         # Sender department
-        self.sender_dept_edit = QLineEdit()
-        form_layout.addRow("Отдел отправителя:", self.sender_dept_edit)
+        self.sender_dept_combo = QComboBox()
+        from Peewee.Classes import Department
+        for dept in Department.select():
+            self.sender_dept_combo.addItem(dept.name, dept.id)
+        form_layout.addRow("Отдел отправителя:", self.sender_dept_combo)
         
         # Sender position
         self.sender_pos_edit = QLineEdit()
@@ -365,7 +293,9 @@ class DocumentDialog(QDialog):
         
         # Evaluation
         self.evaluation_combo = QComboBox()
-        self.evaluation_combo.addItems(["", "Отлично", "Хорошо", "Удовлетворительно", "Неудовлетворительно"])
+        self.evaluation_combo.addItem("", "")  # Empty option
+        for code, name in [('excellent', 'Отлично'), ('good', 'Хорошо'), ('satisfactory', 'Удовлетворительно'), ('unsatisfactory', 'Неудовлетворительно')]:
+            self.evaluation_combo.addItem(name, code)
         form_layout.addRow("Оценка:", self.evaluation_combo)
         
         # Evaluation date
@@ -386,7 +316,8 @@ class DocumentDialog(QDialog):
         
         # Status
         self.status_combo = QComboBox()
-        self.status_combo.addItems(["Отправлен", "Получен", "На оценке", "Оценен", "Архив"])
+        for code, name in [('sent', 'Отправлен'), ('received', 'Получен'), ('evaluating', 'На оценке'), ('evaluated', 'Оценен'), ('archived', 'Архив')]:
+            self.status_combo.addItem(name, code)
         form_layout.addRow("Статус:", self.status_combo)
         
         layout.addLayout(form_layout)
@@ -429,96 +360,110 @@ class DocumentDialog(QDialog):
             self.file_path_edit.setText(target_path)
     
     def save_document(self):
-        """Save document to database"""
+        """Save document to database using Peewee"""
         # Validate required fields
         if not self.title_edit.text():
             QMessageBox.warning(self, "Ошибка", "Введите наименование документа")
             return
         
-        if not self.sender_branch_edit.text():
-            QMessageBox.warning(self, "Ошибка", "Введите филиал отправителя")
+        if self.sender_branch_combo.currentIndex() < 0:
+            QMessageBox.warning(self, "Ошибка", "Выберите филиал отправителя")
             return
         
-        conn = sqlite3.connect(self.main_app.db_path)
-        cursor = conn.cursor()
+        from Peewee.Classes import Document, Branch, Department
         
-        # Prepare data
-        doc_data = (
-            self.doc_type_combo.currentText(),
-            self.title_edit.text(),
-            self.description_edit.toPlainText(),
-            self.sender_branch_edit.text(),
-            self.sender_dept_edit.text(),
-            self.sender_pos_edit.text(),
-            self.sender_fio_edit.text(),
-            self.outgoing_number_edit.text(),
-            self.outgoing_date_edit.date().toString("yyyy-MM-dd"),
-            self.incoming_number_edit.text(),
-            self.incoming_date_edit.date().toString("yyyy-MM-dd"),
-            self.evaluator_edit.text(),
-            self.evaluation_combo.currentText(),
-            self.evaluation_date_edit.date().toString("yyyy-MM-dd"),
-            self.file_path_edit.text(),
-            self.status_combo.currentText()
-        )
-        
-        if self.doc_id:
-            # Update existing document
-            cursor.execute('''
-                UPDATE documents 
-                SET doc_type=?, title=?, description=?, sender_branch=?, 
-                    sender_department=?, sender_position=?, sender_fio=?, 
-                    outgoing_number=?, outgoing_date=?, incoming_number=?, 
-                    incoming_date=?, evaluator=?, evaluation=?, 
-                    evaluation_date=?, file_path=?, status=?
-                WHERE id=?
-            ''', doc_data + (self.doc_id,))
-        else:
-            # Insert new document
-            cursor.execute('''
-                INSERT INTO documents (
-                    doc_type, title, description, sender_branch, 
-                    sender_department, sender_position, sender_fio, 
-                    outgoing_number, outgoing_date, incoming_number, 
-                    incoming_date, evaluator, evaluation, 
-                    evaluation_date, file_path, status
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', doc_data)
-        
-        conn.commit()
-        conn.close()
-        
-        self.accept()
+        try:
+            # Get selected branch and department
+            branch_id = self.sender_branch_combo.currentData()
+            dept_id = self.sender_dept_combo.currentData()
+            
+            # Get branch and department objects
+            branch = Branch.get_by_id(branch_id)
+            department = Department.get_by_id(dept_id) if dept_id else None
+            
+            # Prepare data
+            doc_data = {
+                'doc_type': self.doc_type_combo.currentData(),
+                'title': self.title_edit.text(),
+                'description': self.description_edit.toPlainText() or None,
+                'sender_branch': branch,
+                'sender_department': department,
+                'sender_position': self.sender_pos_edit.text() or None,
+                'sender_fio': self.sender_fio_edit.text(),
+                'outgoing_number': self.outgoing_number_edit.text() or None,
+                'outgoing_date': self.outgoing_date_edit.date().toPyDate() if self.outgoing_date_edit.date().isValid() else None,
+                'incoming_number': self.incoming_number_edit.text() or None,
+                'incoming_date': self.incoming_date_edit.date().toPyDate() if self.incoming_date_edit.date().isValid() else None,
+                'evaluator': self.evaluator_edit.text() or None,
+                'evaluation': self.evaluation_combo.currentData() or None,
+                'evaluation_date': self.evaluation_date_edit.date().toPyDate() if self.evaluation_date_edit.date().isValid() else None,
+                'file_path': self.file_path_edit.text() or None,
+                'status': self.status_combo.currentData()
+            }
+            
+            if self.document:
+                # Update existing document
+                for attr, value in doc_data.items():
+                    setattr(self.document, attr, value)
+                self.document.save()
+            else:
+                # Create new document
+                Document.create(**doc_data)
+            
+            self.accept()
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Ошибка при сохранении документа: {str(e)}")
     
     def load_document_data(self):
         """Load existing document data for editing"""
-        conn = sqlite3.connect(self.main_app.db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT * FROM documents WHERE id = ?", (self.doc_id,))
-        record = cursor.fetchone()
-        conn.close()
-        
-        if record:
-            self.doc_type_combo.setCurrentText(record[1])
-            self.title_edit.setText(record[2])
-            self.description_edit.setPlainText(record[3] or "")
-            self.sender_branch_edit.setText(record[4])
-            self.sender_dept_edit.setText(record[5])
-            self.sender_pos_edit.setText(record[6])
-            self.sender_fio_edit.setText(record[7])
-            self.outgoing_number_edit.setText(record[8])
-            if record[9]:  # outgoing_date
-                self.outgoing_date_edit.setDate(QDate.fromString(record[9], "yyyy-MM-dd"))
-            self.incoming_number_edit.setText(record[10])
-            if record[11]:  # incoming_date
-                self.incoming_date_edit.setDate(QDate.fromString(record[11], "yyyy-MM-dd"))
-            self.evaluator_edit.setText(record[12])
-            self.evaluation_combo.setCurrentText(record[13] or "")
-            if record[14]:  # evaluation_date
-                self.evaluation_date_edit.setDate(QDate.fromString(record[14], "yyyy-MM-dd"))
-            self.file_path_edit.setText(record[15] or "")
-            self.status_combo.setCurrentText(record[16] or "")
+        if self.document:
+            # Map document type to combo box
+            doc_type_map = dict([('main', 'Основной'), ('additional', 'Дополнительный'), ('report', 'Отчетный'), ('other', 'Прочий')])
+            idx = self.doc_type_combo.findData(self.document.doc_type)
+            if idx >= 0:
+                self.doc_type_combo.setCurrentIndex(idx)
+            
+            self.title_edit.setText(self.document.title)
+            self.description_edit.setPlainText(self.document.description or "")
+            
+            # Set branch
+            branch_idx = self.sender_branch_combo.findData(self.document.sender_branch.id)
+            if branch_idx >= 0:
+                self.sender_branch_combo.setCurrentIndex(branch_idx)
+            
+            # Set department
+            if self.document.sender_department:
+                dept_idx = self.sender_dept_combo.findData(self.document.sender_department.id)
+                if dept_idx >= 0:
+                    self.sender_dept_combo.setCurrentIndex(dept_idx)
+            
+            self.sender_pos_edit.setText(self.document.sender_position or "")
+            self.sender_fio_edit.setText(self.document.sender_fio)
+            self.outgoing_number_edit.setText(self.document.outgoing_number or "")
+            
+            if self.document.outgoing_date:
+                self.outgoing_date_edit.setDate(self.document.outgoing_date)
+            
+            self.incoming_number_edit.setText(self.document.incoming_number or "")
+            if self.document.incoming_date:
+                self.incoming_date_edit.setDate(self.document.incoming_date)
+            
+            self.evaluator_edit.setText(self.document.evaluator or "")
+            
+            # Set evaluation
+            eval_idx = self.evaluation_combo.findData(self.document.evaluation)
+            if eval_idx >= 0:
+                self.evaluation_combo.setCurrentIndex(eval_idx)
+            
+            if self.document.evaluation_date:
+                self.evaluation_date_edit.setDate(self.document.evaluation_date)
+            
+            self.file_path_edit.setText(self.document.file_path or "")
+            
+            # Set status
+            status_idx = self.status_combo.findData(self.document.status)
+            if status_idx >= 0:
+                self.status_combo.setCurrentIndex(status_idx)
 
 
 class StatisticsTab(QWidget):
@@ -535,7 +480,7 @@ class StatisticsTab(QWidget):
         controls_layout = QHBoxLayout()
         
         self.branch_filter = QComboBox()
-        self.branch_filter.addItem("Все филиалы")
+        self.branch_filter.addItem("Все филиалы", None)
         # Load branches from database
         self.load_branches()
         
@@ -562,46 +507,45 @@ class StatisticsTab(QWidget):
     
     def load_branches(self):
         """Load branches from database"""
-        conn = sqlite3.connect(self.main_app.db_path)
-        cursor = conn.cursor()
+        from Peewee.Classes import Branch
         
-        cursor.execute("SELECT name FROM branches")
-        branches = cursor.fetchall()
-        
-        for branch in branches:
-            self.branch_filter.addItem(branch[0])
-        
-        conn.close()
+        try:
+            for branch in Branch.select():
+                self.branch_filter.addItem(branch.name, branch.id)
+        except:
+            pass  # Database might not be initialized yet
     
     def generate_statistics(self):
         """Generate statistics based on filters"""
-        selected_branch = self.branch_filter.currentText()
+        from Peewee.Classes import Document, Branch
+        
+        selected_branch_id = self.branch_filter.currentData()
         period = self.period_combo.currentText()
         
-        conn = sqlite3.connect(self.main_app.db_path)
-        cursor = conn.cursor()
+        # Build query
+        query = Document.select()
         
-        # Base query
-        query = "SELECT * FROM documents"
-        params = []
+        if selected_branch_id is not None:
+            query = query.where(Document.sender_branch == selected_branch_id)
         
-        if selected_branch != "Все филиалы":
-            query += " WHERE sender_branch = ?"
-            params.append(selected_branch)
+        # For now, don't filter by period, but we could add date filtering here
         
-        cursor.execute(query, params)
-        records = cursor.fetchall()
+        records = list(query)
         
         # Calculate statistics
         total_docs = len(records)
         
         # Count by evaluation
         eval_counts = {"Отлично": 0, "Хорошо": 0, "Удовлетворительно": 0, "Неудовлетворительно": 0, "Без оценки": 0}
+        eval_map = dict(Document.EVALUATIONS)
+        rev_eval_map = {v: k for k, v in eval_map.items()}  # Reverse mapping
+        
         for record in records:
-            evaluation = record[13]  # evaluation column
+            evaluation = record.evaluation
             if evaluation:
-                if evaluation in eval_counts:
-                    eval_counts[evaluation] += 1
+                display_eval = eval_map.get(evaluation, evaluation)
+                if display_eval in eval_counts:
+                    eval_counts[display_eval] += 1
                 else:
                     eval_counts["Без оценки"] += 1
             else:
@@ -609,25 +553,35 @@ class StatisticsTab(QWidget):
         
         # Count by status
         status_counts = {}
+        status_map = dict(Document.STATUSES)
         for record in records:
-            status = record[16]  # status column
+            status = record.status
             if status:
-                status_counts[status] = status_counts.get(status, 0) + 1
+                display_status = status_map.get(status, status)
+                status_counts[display_status] = status_counts.get(display_status, 0) + 1
             else:
                 status_counts["Без статуса"] = status_counts.get("Без статуса", 0) + 1
         
         # Count by department
         dept_counts = {}
         for record in records:
-            dept = record[5]  # sender_department column
+            dept = record.sender_department
             if dept:
-                dept_counts[dept] = dept_counts.get(dept, 0) + 1
+                dept_counts[dept.name] = dept_counts.get(dept.name, 0) + 1
             else:
                 dept_counts["Без отдела"] = dept_counts.get("Без отдела", 0) + 1
         
         # Format statistics
+        branch_name = "Все филиалы"
+        if selected_branch_id is not None:
+            try:
+                branch = Branch.get_by_id(selected_branch_id)
+                branch_name = branch.name
+            except:
+                branch_name = "Филиал не найден"
+        
         stats_text = f"""Статистика по документам
-Фильтр: {selected_branch}, Период: {period}
+Фильтр: {branch_name}, Период: {period}
 
 Общее количество документов: {total_docs}
 
@@ -645,7 +599,6 @@ class StatisticsTab(QWidget):
             stats_text += f"  {dept}: {count}\n"
         
         self.stats_display.setPlainText(stats_text)
-        conn.close()
 
 
 class ExportImportTab(QWidget):
@@ -731,72 +684,64 @@ class ExportImportTab(QWidget):
     
     def load_branches(self):
         """Load branches for export filter"""
-        self.export_branch.addItem("Все филиалы")
+        from Peewee.Classes import Branch
         
-        conn = sqlite3.connect(self.main_app.db_path)
-        cursor = conn.cursor()
+        self.export_branch.addItem("Все филиалы", None)
         
-        cursor.execute("SELECT name FROM branches")
-        branches = cursor.fetchall()
-        
-        for branch in branches:
-            self.export_branch.addItem(branch[0])
-        
-        conn.close()
+        try:
+            for branch in Branch.select():
+                self.export_branch.addItem(branch.name, branch.id)
+        except:
+            pass  # Database might not be initialized yet
     
     def export_documents(self):
         """Export documents to ZIP archive"""
-        selected_branch = self.export_branch.currentText()
+        from Peewee.Classes import Document, Branch
         
-        conn = sqlite3.connect(self.main_app.db_path)
-        cursor = conn.cursor()
+        selected_branch_id = self.export_branch.currentData()
         
-        # Query documents
-        query = "SELECT * FROM documents"
-        params = []
+        # Build query
+        query = Document.select().order_by(Document.created_at.desc())
         
-        if selected_branch != "Все филиалы":
-            query += " WHERE sender_branch = ?"
-            params.append(selected_branch)
+        if selected_branch_id is not None:
+            query = query.where(Document.sender_branch == selected_branch_id)
         
-        cursor.execute(query, params)
-        records = cursor.fetchall()
+        records = list(query)
         
         # Create export data
         export_data = {
             "export_date": datetime.now().isoformat(),
-            "source_branch": selected_branch,
+            "source_branch": self.export_branch.currentText(),
             "documents": []
         }
         
         for record in records:
             doc_dict = {
-                "id": record[0],
-                "doc_type": record[1],
-                "title": record[2],
-                "description": record[3],
-                "sender_branch": record[4],
-                "sender_department": record[5],
-                "sender_position": record[6],
-                "sender_fio": record[7],
-                "outgoing_number": record[8],
-                "outgoing_date": record[9],
-                "incoming_number": record[10],
-                "incoming_date": record[11],
-                "evaluator": record[12],
-                "evaluation": record[13],
-                "evaluation_date": record[14],
-                "file_path": record[15],
-                "status": record[16],
-                "created_at": record[17]
+                "id": record.id,
+                "doc_type": record.doc_type,
+                "title": record.title,
+                "description": record.description,
+                "sender_branch": record.sender_branch.name,
+                "sender_department": record.sender_department.name if record.sender_department else None,
+                "sender_position": record.sender_position,
+                "sender_fio": record.sender_fio,
+                "outgoing_number": record.outgoing_number,
+                "outgoing_date": str(record.outgoing_date) if record.outgoing_date else None,
+                "incoming_number": record.incoming_number,
+                "incoming_date": str(record.incoming_date) if record.incoming_date else None,
+                "evaluator": record.evaluator,
+                "evaluation": record.evaluation,
+                "evaluation_date": str(record.evaluation_date) if record.evaluation_date else None,
+                "file_path": record.file_path,
+                "status": record.status,
+                "created_at": str(record.created_at)
             }
             export_data["documents"].append(doc_dict)
         
-        conn.close()
-        
         # Generate filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"export_{selected_branch.replace(' ', '_')}_{timestamp}.zip"
+        branch_name = self.export_branch.currentText().replace(' ', '_') if selected_branch_id is not None else "all"
+        filename = f"export_{branch_name}_{timestamp}.zip"
         
         # Create ZIP file with JSON metadata and document files
         with zipfile.ZipFile(filename, 'w') as zipf:
