@@ -1,8 +1,6 @@
 from enum import unique
 from peewee import CharField, DateField, FloatField, IntegerField, ForeignKeyField
-from Peewee.Common.BaseModel import BaseModel
-from Peewee.Common.IntEnumField import IntEnumField
-from Common.StrExplainableIntEnum import StrExplainableIntEnum
+from framework import StrExplainableIntEnum, BaseModel, IntEnumField, StrExplainableIntEnum
 from Peewee.Classes.MainClasses import Task, ProcessUnit, Department, Employee, WorkingGroup, Rater, Rating, File
 
 
@@ -14,7 +12,6 @@ class ContentType(StrExplainableIntEnum):
     reference   = 2
     sample      = 3
     identity    = 4
-    report      = 5
 
     @classmethod
     def _get_explanation_dict(cls):

@@ -1,12 +1,17 @@
-from typing import List, Dict, Any
+from ..decorators.Singleton import singleton
+from typing import List, Dict, Any, Optional
 from PyQt5.QtWidgets import QWidget, QTableView, qApp, QStyle
 import json
 
+@singleton # работает как синглтон
 class Settings:
     """Класс обеспечивает чтение, хранение и запись настроек в файл формата JSON"""
-    def __init__(self, save_path:str):
-        self.save_path:str = save_path
+    def __init__(self, save_path:Optional[str]):
+        self.save_path:Optional[str] = save_path
         self.data:Dict[str,Any] = {}
+
+    def setFilePath(self, path:str):
+        self.save_path = path
 
     def getTitleBarHeight(self):
         style = qApp.style()
@@ -87,6 +92,9 @@ class Settings:
 
     def save(self) -> bool:
         """Сохранение файла с настройками"""
+        if self.save_path is None:
+            print('Путь к файлу для записи не задан.')
+            return False
         try:
             with open(self.save_path, 'w') as f:
                 json.dump(self.data, f, sort_keys=True, indent=2)
@@ -97,6 +105,9 @@ class Settings:
 
     def load(self) -> bool:
         """Загрузка файла с настройками"""
+        if self.save_path is None:
+            print('Путь к файлу для чтения не задан.')
+            return False
         try:
             with open(self.save_path) as f:
                 self.data = json.load(f)
@@ -104,5 +115,3 @@ class Settings:
             print(f'Ошибка загрузки файла настроек {self.save_path} - {file_error.strerror}')
             return False
         return True
-
-settings = Settings('settings.json')

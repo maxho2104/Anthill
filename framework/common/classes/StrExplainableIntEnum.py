@@ -1,5 +1,5 @@
 from enum import IntEnum
-from typing import Optional, Union, Tuple, List, Dict
+from typing import Optional,Union,Tuple, List, Dict
 
 class StrExplainableIntEnum(IntEnum):
     """Базовый класс для IntEnum c возможностью получения строкового описания"""

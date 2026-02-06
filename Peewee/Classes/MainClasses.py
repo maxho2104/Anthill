@@ -1,10 +1,18 @@
 from typing import Any
 from peewee import CharField, DateField, ForeignKeyField
 from enum import unique
-from Peewee.Common.BaseModel import BaseModel
-from Peewee.Common.IntEnumField import IntEnumField
-from Common import global_const
-from Common.StrExplainableIntEnum import StrExplainableIntEnum
+from framework import BaseModel, IntEnumField, global_const, StrExplainableIntEnum
+
+
+class Rank(BaseModel):
+    """Научное звание сотрудника (если есть)"""
+    name = CharField(verbose_name='Наименование')
+    short = CharField(verbose_name='Сокращенное наименование', null=True)
+
+    def representation(self) -> Any:
+        if self.short is not None and len(str(self.short).strip()) > 0:
+            return str(self.short)
+        return str(self.name)
 
 class ProcessUnit(BaseModel):
     """Филиал предприятия"""
@@ -21,7 +29,7 @@ class Department(BaseModel):
     """Подразделение (отдел) предприятия"""
     name = CharField(verbose_name='Название')
     short = CharField(verbose_name='Сокращенное название')
-    militaryUnit = ForeignKeyField(ProcessUnit, backref='units', verbose_name='Филиал')
+    process_unit = ForeignKeyField(ProcessUnit, backref='units', verbose_name='Филиал')
 
     def representation(self) -> Any:
         return f'{self.short} {self.militaryUnit.representation()}'
@@ -37,6 +45,7 @@ class Employee(BaseModel):
     last_name = CharField(verbose_name='Фамилия')
     first_name = CharField(verbose_name='Имя')
     second_name = CharField(verbose_name='Отчество', null=True)
+    rank = ForeignKeyField(Rank, backref='ranks', verbose_name='Научное звание', null=True)
     department = ForeignKeyField(Department, backref='departments', verbose_name='Подразделение', null=True)
     post = CharField(verbose_name='Должность', null=True)
     working_group = ForeignKeyField(WorkingGroup, backref='working_groups', verbose_name='В составе рабочей группы', null=True)
@@ -127,8 +136,8 @@ class Rating(BaseModel):
 @unique
 class TaskType(StrExplainableIntEnum):
     """Тип задачи"""
-    grz = 0
-    giz = 1
+    oz = 0
+    dz = 1
 
     @classmethod
     def _get_explanation_dict(cls):
