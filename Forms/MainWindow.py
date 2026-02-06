@@ -1,119 +1,96 @@
 import os
-from typing import Optional
-from PyQt5.QtCore import Qt, pyqtSlot
-from PyQt5.QtWidgets import QWidget, QMainWindow, QMenu, QAction, QFileDialog
-from Peewee.Utils.DBManager import db_manager
-from Common.Settings import settings
+from PyQt5 import QtCore, QtWidgets
+from framework import DBManager
+from framework import Settings
+from Peewee.Classes.MainClasses import *
+from Peewee.Classes.Content import *
+from common_functions import functions
 
 
-class MainWindow(QMainWindow):
-    """Основное окно приложения"""
-
-    def __init__(self, parent: QWidget = None):
-        super().__init__(parent=parent)
-
-        # Actions
-        self._close_action: Optional[QAction] = None
-
-        self._create_menu()
-        self._restore_settings()
+class MainWindow(QtWidgets.QMainWindow):
+    """Основная форма приложения"""
 
     def showEvent(self, event):
-        settings.restoreWidgetGeometry(self, 'Forms', 'MainWindow')
+        """Действия при открытии окна"""
+        Settings().restoreWidgetGeometry(self, 'Forms', 'MainWindow')
         event.accept()
 
     def closeEvent(self, event):
-        self._disconnectFromDB()
-        settings.saveWidgetGeometry(self, 'Forms', 'MainWindow')
-        settings.save()
+        """Действия при закрытии окна"""
+        DBManager().closeDB()
+        Settings().saveWidgetGeometry(self, 'Forms', 'MainWindow')
+        Settings().save()
         event.accept()
 
-    def _restore_settings(self):
-        """Чтение и восстановление настроек"""
-        if settings.load():
-            db_path = settings.get('Main settings', 'Database path')
-            if not db_path or not os.path.exists(db_path):
-                self._connect_to_db_action_triggered()
-            else:
-                self._connectToDB(db_path)
+    def __init__(self, parent:QtWidgets.QWidget=None):
+        super().__init__(parent)
+        # Перечисляем таблицы, с которыми будет работать программа
+        working_tables = [
+            Rank,
+            ProcessUnit,
+            Department,
+            WorkingGroup,
+            Employee,
+            Task,
+            Rater,
+            Rating,
+            RatingList,
+            Attachment,
+            File,
+            Content
+        ]
+        self.make_ui()
+        # Инициализация и загрузка настроек
+        Settings('.\\settings.json')
+        Settings().load()
+        # Инициализация БД
+        DBManager(classes=working_tables)
+        DBManager().connection_toggled.connect(self.on_db_connection_toggled)
+        # Загрузка БД, сохраненной в настройках (если есть)
+        db_path = Settings().get('Main settings', 'Database path')
+        if (not db_path is None) and os.path.exists(db_path):
+            DBManager().connectDB(db_path)
 
-    def _create_menu(self):
-        database_menu: QMenu = self.menuBar().addMenu('База данных')
-        open_action: QAction = database_menu.addAction('Подключиться к БД')
-        open_action.triggered.connect(self._connect_to_db_action_triggered)
-        self._close_action = database_menu.addAction('Отключиться от БД')
-        self._close_action.setEnabled(False)
-        self._close_action.triggered.connect(self._disconnectFromDB)
+    def make_ui(self):
+        """Создание интерфейса"""
+        self.make_menu()
+        tab_widget = QtWidgets.QTabWidget()
+        tab_widget.setTabPosition(QtWidgets.QTabWidget.West)
+        content_tab = tab_widget.addTab(QtWidgets.QWidget(), 'Материалы')
+
+        self.setCentralWidget(tab_widget)
+
+
+
+    def make_menu(self):
+        """Создание меню"""
+        menu_bar = QtWidgets.QMenuBar()
+        database_menu = menu_bar.addMenu('База данных')
+        connect_action = database_menu.addAction('Подключить БД')
+        connect_action.triggered.connect(lambda: self.connect_to_database())
+        disconnect_action = database_menu.addAction('Отключить БД')
+        disconnect_action.triggered.connect(lambda: DBManager().closeDB())
+        disconnect_action.setEnabled(DBManager().connected)
         database_menu.addSeparator()
-        create_action: QAction = database_menu.addAction('Создать новую БД')
-        create_action.triggered.connect(self._create_db_action_triggered)
+        create_db_action = database_menu.addAction('Создать новую БД')
+        create_db_action.triggered.connect(lambda: self.connect_to_database(True))
+        self.setMenuBar(menu_bar)
 
-    @pyqtSlot()
-    def _connect_to_db_action_triggered(self):
-        db_path = self._getDBPath()
-        self._connectToDB(db_path)
+    def connect_to_database(self, create:bool=False):
+        db_path = functions.get_db_path_from_dialog(self,create)
+        if len(db_path)>0:
+            if create:
+                DBManager().createDB(db_path)
+            else:
+                if os.path.exists(db_path):
+                    DBManager().connectDB(db_path)
+            if DBManager().connected:
+                Settings().set(os.path.relpath(db_path), 'Main settings', 'Database path')
 
-    @pyqtSlot()
-    def _create_db_action_triggered(self):
-        db_path = self._getDBPath(True)
-        if not db_path:
-            return
-        self._disconnectFromDB()
-        self._createDB(db_path)
+    @QtCore.pyqtSlot(bool)
+    def on_db_connection_toggled(self, connected:bool):
+        """Действия при подключении/отключении БД"""
+        functions.find_action_or_menu(self.menuBar(), 'Отключить БД').setEnabled(connected)
 
-    def _connectToDB(self, path: str) -> bool:
-        """Подключение к БД, находящейся в файле path"""
-        if not path:
-            return False
 
-        self._disconnectFromDB()
 
-        if db_manager.connectDB(os.path.relpath(path)):
-            settings.set(os.path.relpath(db_manager.db_path), 'Main settings', 'Database path')
-            self._close_action.setEnabled(True)
-        return db_manager.connected
-
-    def _createDB(self, path: str) -> bool:
-        """Создание новой БД"""
-        if not path:
-            return False
-
-        # Отключаемся от текущей БД если она подключена
-        if db_manager.connected:
-            self._disconnectFromDB()
-
-        # Подключаемся к новой БД
-        if not db_manager.connectDB(path):
-            return False
-
-        # Создаем таблицы
-        if not db_manager.createTables():
-            return False
-
-        settings.set(os.path.relpath(db_manager.db_path), 'Main settings', 'Database path')
-        return True
-
-    def _getDBPath(self, create: bool = False) -> str:
-        """Получение пути к БД, путем вызова диалога"""
-        if not create:
-            db_path = QFileDialog.getOpenFileName(
-                self,
-                caption='Открыть файл базы данных',
-                directory='../',
-                filter='Файлы SQLite (*.db; *.sqlite; *.sqlite3; *.db3)'
-            )[0]
-        else:
-            db_path = QFileDialog.getSaveFileName(
-                self,
-                caption='Создать файл базы данных',
-                directory='../',
-                filter='Файлы SQLite (*.db; *.sqlite; *.sqlite3; *.db3)'
-            )[0]
-        return db_path
-
-    @pyqtSlot()
-    def _disconnectFromDB(self):
-        """Отключение от БД"""
-        if db_manager.connected:
-            closed = db_manager.closeDB()
-            self._close_action.setEnabled(not closed)
