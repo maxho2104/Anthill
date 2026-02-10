@@ -1,5 +1,5 @@
 from . import global_const
-from .peewee import BaseModel, ItemWidget, ItemDialog, IntEnumField, TableModel
+from .peewee import BaseModel, ItemWidget, ItemDialog, IntEnumField, TableModel, TableDelegate, FilterableTableView
 from .common import StrExplainableIntEnum, DBManager, Settings
 
 __all__ = [
@@ -11,5 +11,7 @@ __all__ = [
     'StrExplainableIntEnum',
     'DBManager',
     'Settings',
-    'TableModel'
+    'TableModel',
+    'TableDelegate',
+    'FilterableTableView'
 ]
