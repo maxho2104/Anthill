@@ -1,7 +1,6 @@
 from PyQt5 import QtWidgets, QtCore
-from typing import Type, List, Dict, Optional, Any
-from ... import global_const
-from ...peewee import BaseModel, IntEnumField
+from typing import Type, List, Dict, Any
+from ...peewee import BaseModel, IntEnumField, TableDelegate
 import peewee
 from ...common import WidgetFunctions
 
@@ -19,10 +18,23 @@ class TableModel(QtCore.QAbstractItemModel):
         self._idToPeeweeInstance: Dict[int, BaseModel] = {}
         # Словарь с делегатами для столбцов
         self._delegates:Dict[str, QtWidgets.QStyledItemDelegate] = {}
-        # Курсив для пустых значений
-        _font = QtWidgets.qApp.font()
-        _font.setItalic(True)
-        self.special_font = _font
+        # Курсив для пустых значений - будет создан при первом обращении
+        self.special_font = QtWidgets.qApp.font()
+        self.special_font.setItalic(True)
+
+    def _create_delegates(self):
+        for field_name in self.fields:
+            field: peewee.Field = self.peewee_class._meta.fields[field_name]
+            if isinstance(field, (peewee.BooleanField, peewee.ForeignKeyField, peewee.IntegerField, peewee.FloatField,
+                                  peewee.TimeField, peewee.DateField, peewee.DateTimeField)):
+                self._delegates[field_name] = TableDelegate(field)
+
+    def set_delegates(self, view: QtWidgets.QTableView):
+        self._create_delegates()
+        field_names = [name for name in self.fields]
+        for field_name, delegate in self._delegates.items():
+            if field_name in field_names:
+                view.setItemDelegateForColumn(field_names.index(field_name), delegate)
 
     def columnCount(self, parent=QtCore.QModelIndex) -> int:
         """Получение количества столбцов модели"""
@@ -34,7 +46,7 @@ class TableModel(QtCore.QAbstractItemModel):
 
     def index(self, row: int, column: int, parent=QtCore.QModelIndex()) -> QtCore.QModelIndex:
         """Получение индекса модели по номерам строки и столбца соответственно"""
-        if self.hasIndex(row, column, parent):
+        if self.hasIndex(row, column, parent) and row < len(self._data) and column < len(self.fields):
             return self.createIndex(row, column, self._data[row])
         return QtCore.QModelIndex()
 
@@ -50,7 +62,7 @@ class TableModel(QtCore.QAbstractItemModel):
 
     def headerData(self, section:int, orientation:int, role:int=QtCore.Qt.DisplayRole) -> Any:
         """Получение названий заголовков для столбцов и строк в зависимости от orientation"""
-        if role != QtCore.Qt.DisplayRole:
+        if role != QtCore.Qt.DisplayRole or section >= len(self.fields):
             return QtCore.QVariant()
         if orientation == QtCore.Qt.Horizontal:
             # Получаем русскоязычное название поля
@@ -74,11 +86,11 @@ class TableModel(QtCore.QAbstractItemModel):
         _record = self._data[index.row()]
         field:peewee.Field = self.peewee_class._meta.fields[self.fields[index.column()]]
         old_value = getattr(_record, field.name)
+        # Для необязательных текстовых полей, вместо пустой стороки пишем None
+        if isinstance(field, (peewee.CharField, peewee.TextField)) and field.null and len(value) == 0:
+            value = None
         if value == old_value:
             return False
-        # Для необязательных текстовых полей, вместо пустой стороки пишем None
-        if isinstance(field, peewee.CharField) and field.null and len(value) == 0:
-            value = None
         setattr(_record, field.name, value)
         try:
             _record.save()
@@ -90,6 +102,8 @@ class TableModel(QtCore.QAbstractItemModel):
 
     def removeRows(self, row:int, count:int, parent:QtCore.QModelIndex=QtCore.QModelIndex()) -> bool:
         """Удаляет count строк, начиная с row из таблицы"""
+        if row < 0 or row + count > len(self._data):
+            return False
         self.beginRemoveRows(parent, row, row + count - 1)
         for _ in range(count):
             _record = self._data.pop(row)
@@ -134,8 +148,13 @@ class TableModel(QtCore.QAbstractItemModel):
                     print(str(px))
                     return False
         # Вставка в модель
-        self.beginInsertRows(QtCore.QModelIndex(), len(self._data), len(self._data) + len(peewee_instances) - 1)
+        first_row = len(self._data)
+        last_row = first_row + len(peewee_instances) - 1
+        self.beginInsertRows(QtCore.QModelIndex(), first_row, last_row)
         self._data.extend(peewee_instances)
+        # Update the id to instance mapping
+        for instance in peewee_instances:
+            self._idToPeeweeInstance[instance.id] = instance
         self.endInsertRows()
         return True
 

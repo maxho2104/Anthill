@@ -1,5 +1,5 @@
 from .classes import BaseModel, IntEnumField
-from .widgets import ItemWidget, ItemDialog
+from .widgets import ItemWidget, ItemDialog, TableDelegate, FilterableTableView
 from .qt_models import TableModel
 
 __all__ = [
@@ -7,5 +7,7 @@ __all__ = [
     'IntEnumField',
     'ItemWidget',
     'ItemDialog',
-    'TableModel'
+    'TableModel',
+    'TableDelegate',
+    'FilterableTableView'
 ]

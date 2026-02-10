@@ -114,7 +114,56 @@ def fill_foreign_combobox(_field:Type[ForeignKeyField], combo_ref:QtWidgets.QCom
     if _field.null:
         combo_ref.insertItem(0, global_const.defaultNoneDisplayedText, None)
 
-def model_data_from_instance(instance:BaseModel, attr_name:str, role:int = QtCore.Qt.DisplayRole, special_font:Optional[QtGui.QFont]=None) -> Any:
+def _handle_none_value(role: int, special_font: Optional[QtGui.QFont]) -> Any:
+    if role == QtCore.Qt.DisplayRole:
+        return global_const.defaultNoneDisplayedText
+    elif role == QtCore.Qt.EditRole:
+        return None
+    elif role == QtCore.Qt.FontRole and special_font is not None:
+        return special_font
+    elif role == QtCore.Qt.ToolTipRole:
+        return global_const.defaultNoneDisplayedText
+    return QtCore.QVariant()
+
+
+def _handle_field_value(field: Any, _value: Any, role: int, special_font: Optional[QtGui.QFont]) -> Any:
+    if role == QtCore.Qt.DisplayRole or role == QtCore.Qt.EditRole:
+        return _handle_display_or_edit_role(field, _value, role)
+    elif role == QtCore.Qt.FontRole:
+        return _handle_font_role(_value, special_font)
+    elif role == QtCore.Qt.ToolTipRole:
+        return _handle_tooltip_role(_value)
+    return QtCore.QVariant()
+
+
+def _handle_display_or_edit_role(field: Any, _value: Any, role: int) -> Any:
+    if role == QtCore.Qt.DisplayRole:
+        if isinstance(field, peewee.ForeignKeyField):
+            return _value.representation()
+        elif isinstance(field, peewee.BooleanField):
+            return global_const.defaultTrueDisplayedText if _value else global_const.defaultFalseDisplayedText
+        elif isinstance(field, IntEnumField):
+            return str(_value)
+        elif isinstance(field, peewee.TimeField):
+            return DateAndTime.time_to_QTime(_value)
+        elif isinstance(field, peewee.DateField):
+            return DateAndTime.date_to_QDate(_value)
+        elif isinstance(field, peewee.DateTimeField):
+            return DateAndTime.datetime_to_QDateTime(_value)
+        elif isinstance(field, peewee.ManyToManyField):
+            return [str(element.representation()) for element in _value].join(', ')
+    return _value
+
+def _handle_font_role(_value: Any, special_font: Optional[QtGui.QFont]) -> Any:
+    if _value is None and special_font is not None:
+        return special_font
+    return QtCore.QVariant()
+
+
+def _handle_tooltip_role(_value: Any) -> Any:
+    return str(_value) if _value is not None else global_const.defaultNoneDisplayedText
+
+def model_data_from_instance(instance: BaseModel, attr_name: str, role: int = QtCore.Qt.DisplayRole, special_font: Optional[QtGui.QFont] = None) -> Any:
     """Получение данных для модели Qt из экземпляра класса peewee по соответсвующего имени поля
     Параметры:
         instance - ссылка на экземпляр класса peewee
@@ -123,55 +172,24 @@ def model_data_from_instance(instance:BaseModel, attr_name:str, role:int = QtCor
             special_font - специальный шрифт QFont для выделения пустых значений
     """
     # Проверка, есть ли поле с именем attr_name в instance
-    if instance is None or not isinstance(instance, BaseModel) or not hasattr(instance, attr_name):
-        return None
+    if instance is None or not isinstance(instance, BaseModel):
+        return QtCore.QVariant()
 
-    # Получим само значение
-    _value = getattr(instance, attr_name)
-
-    # Для пустых значений
-    if _value is None:
+    # Safely get the attribute value, handling potential exceptions from invalid FK references
+    try:
+        _value = getattr(instance, attr_name, None)
+    except (peewee.DoesNotExist, AttributeError, TypeError):
+        # If getting the attribute fails (e.g., due to invalid FK), return appropriate default
         if role == QtCore.Qt.DisplayRole:
             return global_const.defaultNoneDisplayedText
-        elif role == QtCore.Qt.FontRole:
-            return special_font
+        else:
+            return QtCore.QVariant()
 
-    # Получим тип поля
-    field = instance._meta.fields[attr_name]
+    if _value is None:
+        return _handle_none_value(role, special_font)
 
-    # Для редактирования данные передаются без изменений, кроме внешних ключей
-    if role == QtCore.Qt.EditRole:
-        # Для внешних ключей - пишем id
-        if not _value is None and isinstance(field, peewee.ForeignKeyField):
-            return _value.id
-        return _value
+    field = instance._meta.fields.get(attr_name)
+    if field is None:
+        return QtCore.QVariant()
 
-    # Для отображения представляем данные в текстовом виде
-    if role == QtCore.Qt.DisplayRole:
-        # Для внешнего ключа возвращаем дефолтную функцию представления связанного элемента
-        if isinstance(field, peewee.ForeignKeyField):
-            return _value.representation()
-        # Для Enum'ов
-        if isinstance(field, IntEnumField):
-            return str(_value)
-        # Для Boolean
-        if isinstance(field, peewee.BooleanField):
-            if _value: return global_const.defaultTrueDisplayedText
-            return global_const.defaultFalseDisplayedText
-        # Для двоичных данных
-        if isinstance(field, (peewee.BlobField, peewee.BitField)):
-            return global_const.defaultBlobDisplayedText
-        # Текст, Целые числа и числа с плавающей точкой возвращаем без изменений
-        if isinstance(field, (peewee.CharField, peewee.TextField, peewee.IntegerField, peewee.FloatField)):
-            return _value
-        # Время переводим в QTime
-        if isinstance(field, peewee.TimeField):
-            return DateAndTime.time_to_QTime(_value)
-        # Дату переводим в QDate
-        if isinstance(field, peewee.DateField):
-            return DateAndTime.date_to_QDate(_value)
-        # Дату_время переводим в QDateTime
-        if isinstance(field, peewee.DateTimeField):
-            return DateAndTime.datetime_to_QDateTime(_value)
-
-
+    return _handle_field_value(field, _value, role, special_font)
