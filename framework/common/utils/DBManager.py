@@ -20,7 +20,8 @@ class DBManager(QObject):
         if not classes is None:
             self.peewee_classes = classes
             for peewee_class in self.peewee_classes:
-                peewee_class.set_database(self.db)
+                if issubclass(peewee_class, BaseModel):
+                    peewee_class.set_database(self.db)
 
     def connectDB(self, path: Optional[str]=None) -> bool:
         """Подключение к базе"""
