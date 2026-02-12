@@ -2,6 +2,7 @@ from PyQt5 import QtWidgets, QtCore
 import peewee
 from typing import Callable,List, Dict, Any
 from BatchedQueryModel import BatchedQueryModel, WhereExpression
+from FilterDialog import FilterDialog
 from framework import Settings
 
 class QueryWidget(QtWidgets.QWidget):
@@ -30,6 +31,7 @@ class QueryWidget(QtWidgets.QWidget):
         self.table_view.setModel(self.model)
 
         self.update_button.clicked.connect(self.model.refresh)
+        self.filter_button.clicked.connect(self.show_filter_dialog)
 
     def showEvent(self, event):
         """Действия при открытии окна"""
@@ -43,5 +45,12 @@ class QueryWidget(QtWidgets.QWidget):
         Settings().saveWidgetGeometry(self, 'Forms', f'{self.model.base_peewee_model().__name__}_widget')
         Settings().save()
         event.accept()
+
+    def show_filter_dialog(self):
+        """Показывает диалог фильтров"""
+        dialog = FilterDialog(self.model, self)
+        if dialog.exec_() == QtWidgets.QDialog.Accepted:
+            # Обновить модель после применения фильтров
+            self.model.refresh()
 
 

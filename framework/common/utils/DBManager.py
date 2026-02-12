@@ -1,6 +1,6 @@
 from PyQt5.QtCore import QObject, pyqtSignal
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, Type, List, Iterable
 from peewee import SqliteDatabase, InternalError
 from ..decorators.Singleton import singleton
 from ...peewee.classes.BaseModel import BaseModel
@@ -9,19 +9,24 @@ from ...peewee.classes.BaseModel import BaseModel
 class DBManager(QObject):
     """Класс обеспечивает подключение/отключение от SQLITE БД,  создание таблиц"""
     connection_toggled = pyqtSignal(bool)
-    def __init__(self, classes:Optional[List[BaseModel]]=None, path:Optional[str]=None, parent:QObject = None):
+    def __init__(self, classes:Optional[Iterable[Type[BaseModel]]]=None, path:Optional[str]=None, parent:QObject = None):
         super().__init__(parent)
         self.db = SqliteDatabase(None)
         self.db_path: Optional[str] = None
         if not path is None:
             self.db_path = path
         self.connected: bool = False
-        self.peewee_classes:Optional[List[BaseModel]] = None
+        self.peewee_classes:Optional[List[Type[BaseModel]]] = None
         if not classes is None:
-            self.peewee_classes = classes
-            for peewee_class in self.peewee_classes:
-                if issubclass(peewee_class, BaseModel):
-                    peewee_class.set_database(self.db)
+            self.setClasses(classes)
+
+
+    def setClasses(self, classes:Iterable[Type[BaseModel]]):
+        self.peewee_classes = list(classes)
+        self.peewee_classes = list(classes)
+        for peewee_class in self.peewee_classes:
+            if issubclass(peewee_class, BaseModel):
+                peewee_class.set_database(self.db)
 
     def connectDB(self, path: Optional[str]=None) -> bool:
         """Подключение к базе"""
@@ -29,7 +34,7 @@ class DBManager(QObject):
             # Подключение
             if not path is None:
                 self.db_path = path
-            self.db.init(path)
+            self.db.init(self.db_path)
             self.connected = True
             print(f'База данных из файла {self.db_path} подключена')
             self.connection_toggled.emit(self.connected)
