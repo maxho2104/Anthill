@@ -32,7 +32,7 @@ class Department(BaseModel):
     process_unit = ForeignKeyField(ProcessUnit, backref='units', verbose_name='Филиал')
 
     def representation(self) -> Any:
-        return f'{self.short} {self.militaryUnit.representation()}'
+        return f'{self.short} {self.process_unit.representation()}'
 
 class WorkingGroup(BaseModel):
     """Рабочая группа"""

@@ -1,28 +1,17 @@
 import sys
 import os
-
-# Добавляем родительскую директорию в путь поиска модулей
+# Добавляем родительскую директорию в путь поиска модулей (для VSCode)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from typing import Any
 import peewee
 import enum
 import datetime
+from typing import Any
 from PyQt5 import QtWidgets
-from Peewee.Classes.Content import Content
-from Peewee.Classes.MainClasses import *
-from framework import (
-    DBManager,
-    BaseModel,
-    IntEnumField,
-    StrExplainableIntEnum,
-    TableModel,
-    FilterableTableView
-)
+from framework import BaseModel, IntEnumField, StrExplainableIntEnum, DBManager, Settings, TableDialog
 
-
+#------------------------------------------Тестовые классы--------------------------------------------------------------
 class Person(BaseModel):
     """Человек с Ф.И.О."""
-
     last_name = peewee.CharField(verbose_name="Фамилия")
     first_name = peewee.CharField(verbose_name="Имя", null=True)
     second_name = peewee.CharField(verbose_name="Отчество", null=True)
@@ -51,9 +40,8 @@ class SubjectiveRatingEnum(StrExplainableIntEnum):
             5: ("отл.", "отлично"),
         }
 
-
-
 class TestTable(BaseModel):
+    """Тестовая таблица"""
     char_field = peewee.CharField(verbose_name="Текст(CharField)")
     text_field = peewee.TextField(verbose_name="Текст(TextField)", null=True)
     boolean_field = peewee.BooleanField(verbose_name="Двоичное поле", null=True)
@@ -62,22 +50,27 @@ class TestTable(BaseModel):
     datetime_field = peewee.DateTimeField(verbose_name="Поле даты и времени", null=True)
     date_field = peewee.DateField(verbose_name="Поле даты", null=True)
     time_field = peewee.TimeField(verbose_name="Поле времени", null=True)
-    foreign_key_field = peewee.ForeignKeyField(
-        Person, backref="persons", verbose_name="Внешний ключ", null=True
-    )
-    int_enum_field = IntEnumField(
-        SubjectiveRatingEnum, verbose_name="Поле перечислений", null=True
-    )
+    foreign_key_field = peewee.ForeignKeyField(Person, backref="persons", verbose_name="Внешний ключ", null=True)
+    int_enum_field = IntEnumField(SubjectiveRatingEnum, verbose_name="Поле перечислений", null=True)
+#-----------------------------------------------------------------------------------------------------------------------
+def use_PyQt5()->int:
+
+    dialog = TableDialog(TestTable)
+    dialog.show()
+    return app.exec_()
 
 
-def use_real_db():
-    tables = (Content, Rank, ProcessUnit, Department, WorkingGroup, Employee, Rater, File, RatingList, Rating, Task,)
-    DBManager(tables)
-    DBManager().connectDB("..\\test.db")
 
+if __name__ == "__main__":
+    """Здесь запускается тест"""
+    # Создаем приложения Qt
+    app = QtWidgets.QApplication([])
 
-def uset_test_db():
-    # Указываем классы, с которыми хотим работать
+    # Инициализируем настройки
+    Settings('settings.json')
+    Settings().load()
+
+    # Указываем классы БД, с которыми хотим работать
     DBManager([Person, TestTable])
     # Подключаем базу
     DBManager().connectDB("..\\test_widget.db")
@@ -97,27 +90,13 @@ def uset_test_db():
         TestTable.create(char_field="6-я запись", date_field=datetime.date.today())
         TestTable.create(char_field="7-я запись", time_field=datetime.datetime.now().time())
         TestTable.create(char_field="8-я запись", foreign_key_field=Person.get_by_id(1))
-        TestTable.create(char_field="10-я запись", int_enum_field=SubjectiveRatingEnum.Excellent)
+        TestTable.create(char_field="9-я запись", int_enum_field=SubjectiveRatingEnum.Excellent)
 
-
-def use_PyQt5():
-    app = QtWidgets.QApplication([])
-    # Create model and refresh it before assigning to view to avoid crashes
-    #model = TableModel(TestTable)
-    model = TableModel(Content)
-    model.refresh()
-    table_view = FilterableTableView()
-    table_view.setModel(model)
-    model.set_delegates(table_view)
-    table_view.show()
-    sys.exit(app.exec_())
-
-
-if __name__ == "__main__":
-    """Здесь запускается тест"""
-    #uset_test_table()
-    use_real_db()
-    use_PyQt5()
+    ret_code = use_PyQt5()
 
     # Отключаемся от базы
     DBManager().closeDB()
+    # Сохраняем настройки
+    Settings().save()
+
+    sys.exit(ret_code)

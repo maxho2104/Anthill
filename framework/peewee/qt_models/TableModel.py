@@ -1,6 +1,7 @@
 from PyQt5 import QtWidgets, QtCore
 from typing import Type, List, Dict, Any
-from ...peewee import BaseModel, IntEnumField, TableDelegate
+from ...peewee import BaseModel
+from ..widgets import TableDelegate
 import peewee
 from ...common import WidgetFunctions
 
@@ -116,6 +117,11 @@ class TableModel(QtCore.QAbstractItemModel):
         self.endRemoveRows()
         return True
 
+    def remove_row(self, row:int)-> bool:
+        if row < 0 or row >= len(self._data):
+            return False
+        return self.removeRows(row, 1)
+
     def get_instance_by_id(self, id: int) -> BaseModel:
         """Возвращает экземпляр peewee_class с искомым id"""
         return self._idToPeeweeInstance[id]
@@ -133,8 +139,8 @@ class TableModel(QtCore.QAbstractItemModel):
         self.load_data()
         self.endResetModel()
 
-    def appendRows(self, peewee_instances:List[BaseModel]) -> bool:
-        """Добавление строк в БД"""
+    def append_rows(self, peewee_instances:List[BaseModel]) -> bool:
+        """Добавление строк в модель и запись БД"""
         # Проверка элементов списка
         for peewee_instance in peewee_instances:
             if not isinstance(peewee_instance, self.peewee_class):
@@ -157,5 +163,9 @@ class TableModel(QtCore.QAbstractItemModel):
             self._idToPeeweeInstance[instance.id] = instance
         self.endInsertRows()
         return True
+
+    def append_row(self, peewee_instance:BaseModel) -> bool:
+        """Добавление строки в модель и запись БД"""
+        return self.append_rows([peewee_instance])
 
 

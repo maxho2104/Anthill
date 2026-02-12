@@ -72,8 +72,8 @@ class ItemWidget(QtWidgets.QWidget):
                 self.editor.setTime(QtCore.QTime.currentTime())
             # Дата/время
             elif isinstance(self.field, peewee.DateTimeField):
-                self.editor = QtWidgets.QDateEdit()
-                self.editor.setDisplayFormat('hh:mm dd.MM.yyyy')
+                self.editor = QtWidgets.QDateTimeEdit()
+                #self.editor.setDisplayFormat('hh:mm dd.MM.yyyy')
                 WidgetFunctions.default_fill_datetime_edit(self.editor)
 
             # Добавим self.editor в main_layout
@@ -141,6 +141,7 @@ class ItemWidget(QtWidgets.QWidget):
                             return DateAndTime.QTime_to_time(self.editor.time())
                         elif isinstance(self.editor, QtWidgets.QDateTimeEdit):
                             return DateAndTime.QDateTime_to_datetime(self.editor.dateTime())
+            return None
 
         @value.setter
         def value(self, _val:Any):

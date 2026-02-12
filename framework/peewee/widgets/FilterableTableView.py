@@ -122,9 +122,9 @@ class MySortFilterProxyModel(QtCore.QSortFilterProxyModel):
 
 class FilterableTableView(QtWidgets.QTableView):
     """QTableView с поддержкой сортировки и фильтрации по каждому столбцу"""
-
     rowCountChanged = QtCore.pyqtSignal(int)
-
+    # Виджет для фильтров
+    _filter_widget:FilterableHeader = None
     def __init__(self, parent=None):
         super().__init__(parent)
         # Исходная модель
@@ -135,8 +135,6 @@ class FilterableTableView(QtWidgets.QTableView):
         self.proxy_model.setFilterCaseSensitivity(QtCore.Qt.CaseInsensitive)
         # включаем сортировку
         self.setSortingEnabled(True)
-        # Виджет для фильтров
-        self._filter_widget = None
 
     def setModel(self, model):
         if model is None:
@@ -152,6 +150,9 @@ class FilterableTableView(QtWidgets.QTableView):
             horizontalHeader = FilterableHeader(self)
             horizontalHeader.generateFilters(model.columnCount())
             self.setHorizontalHeader(horizontalHeader)
+            if not self.horizontalHeader().isVisible():
+                self.horizontalHeader().show()
+            self.horizontalHeader().updateGeometries()
             horizontalHeader.filterChanged.connect(self.updateFilter)
 
     def model(self):
@@ -159,6 +160,23 @@ class FilterableTableView(QtWidgets.QTableView):
 
     def selectedIndexes(self):
         return [self.proxy_model.mapToSource(index) for index in super().selectedIndexes()]
+
+    def get_selected_rows(self)->List[int]:
+        """Возвращает номера строк исходной модели выбранных в исходной таблице"""
+        rows = set()
+        for index in super().selectedIndexes():
+            rows.add(self.proxy_model.mapToSource(index).row())
+        return list(rows)
+
+
+    def row_map_from_source(self, row:int)->Optional[int]:
+        if self.source_model is None or self.source_model.columnCount() <= 0 or self.source_model.rowCount() <= 0\
+                or row < 0 or row >= self.source_model.rowCount():
+            return None
+        _index = self.proxy_model.mapFromSource(self.source_model.index(row,0))
+        if not _index.isValid():
+            return None
+        return _index.row()
 
     @QtCore.pyqtSlot(int, str)
     def updateFilter(self, column:int, filter_str:str):
